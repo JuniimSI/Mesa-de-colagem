@@ -11,6 +11,7 @@ import { pintar } from './lib/util.js'
 export default function App() {
   const [fotos, setFotos] = useState([])
   const [assinatura, setAssinatura] = useState(null)
+  const [assinSrc, setAssinSrc] = useState(null)
   const [assinNome, setAssinNome] = useState('nenhuma · ocupará a largura toda')
   const [assinAlpha, setAssinAlpha] = useState(1)
   const [prop, setProp] = useState('4:5')
@@ -65,12 +66,15 @@ export default function App() {
 
   function onAssin(f) {
     if (!f) return
+    const url = URL.createObjectURL(f)
     const img = new Image()
     img.onload = () => {
       setAssinatura(img)
+      setAssinSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return url })
       setAssinNome(f.name + ' · largura toda')
     }
-    img.src = URL.createObjectURL(f)
+    img.onerror = () => URL.revokeObjectURL(url)
+    img.src = url
   }
 
   async function gerar() {
@@ -147,6 +151,7 @@ export default function App() {
             onView={setPreview}
             analisando={analisando}
             assinNome={assinNome}
+            assinSrc={assinSrc}
             temAssin={!!assinatura}
             assinAlpha={assinAlpha}
             setAssinAlpha={setAssinAlpha}

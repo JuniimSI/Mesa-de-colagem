@@ -21,7 +21,54 @@ export function analisar(img) {
 export const dist = (a, b) =>
   Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b) + Math.abs(a.lum - b.lum) * 1.5
 
-// Decodifica em paralelo (4 por vez), reduzindo p/ no máx. 2600px.
+// rejeita se a promise não resolver no tempo dado (evita travar a fila no mobile)
+function comLimite(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then((v) => { clearTimeout(t); resolve(v) }, (e) => { clearTimeout(t); reject(e) })
+  })
+}
+
+// fallback p/ navegadores sem createImageBitmap (ou quando ele falha).
+// SEMPRE resolve: onerror + timeout evitam que a análise fique presa pra sempre.
+function viaImg(f) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(f)
+    const i = new Image()
+    const fim = (img) => { clearTimeout(t); URL.revokeObjectURL(url); resolve(img) }
+    const t = setTimeout(() => fim(null), 30000)
+    i.onload = () => fim(i)
+    i.onerror = () => fim(null)
+    i.src = url
+  })
+}
+
+// decodifica 1 foto; nunca trava nem lança — devolve a foto ou null se falhar.
+async function processar(f) {
+  try {
+    let bmp = await comLimite(createImageBitmap(f), 30000)
+    const max = Math.max(bmp.width, bmp.height)
+    if (max > 2600) {
+      const e = 2600 / max
+      const r = await createImageBitmap(bmp, {
+        resizeWidth: Math.round(bmp.width * e),
+        resizeHeight: Math.round(bmp.height * e),
+        resizeQuality: 'high',
+      })
+      bmp.close()
+      bmp = r
+    }
+    return { bmp, w: bmp.width, h: bmp.height, ...analisar(bmp) }
+  } catch {
+    const img = await viaImg(f)
+    if (!img) return null
+    return { bmp: img, w: img.naturalWidth, h: img.naturalHeight, ...analisar(img) }
+  }
+}
+
+// Decodifica em paralelo, reduzindo p/ no máx. 2600px.
+// Concorrência adaptada ao aparelho: menos decodes simultâneos no mobile
+// (cada foto de 10MB ocupa centenas de MB já decodificada → OOM/trava).
 // onProgress(prontas, total) é chamado a cada foto.
 export async function carregarFotos(files, onProgress) {
   const lista = [...files].filter((f) => f.type.startsWith('image/'))
@@ -29,36 +76,17 @@ export async function carregarFotos(files, onProgress) {
   let prontas = 0
   onProgress?.(0, lista.length)
   const fila = [...lista]
+  const nucleos = navigator.hardwareConcurrency || 4
+  const mem = navigator.deviceMemory || 4
+  const N = Math.max(1, Math.min(nucleos, mem >= 8 ? 4 : 2))
   async function operario() {
     while (fila.length) {
-      const f = fila.shift()
-      try {
-        let bmp = await createImageBitmap(f)
-        const max = Math.max(bmp.width, bmp.height)
-        if (max > 2600) {
-          const e = 2600 / max
-          const r = await createImageBitmap(bmp, {
-            resizeWidth: Math.round(bmp.width * e),
-            resizeHeight: Math.round(bmp.height * e),
-            resizeQuality: 'high',
-          })
-          bmp.close()
-          bmp = r
-        }
-        fotos.push({ bmp, w: bmp.width, h: bmp.height, ...analisar(bmp) })
-      } catch {
-        // fallback p/ navegadores antigos
-        const img = await new Promise((r) => {
-          const i = new Image()
-          i.onload = () => r(i)
-          i.src = URL.createObjectURL(f)
-        })
-        fotos.push({ bmp: img, w: img.naturalWidth, h: img.naturalHeight, ...analisar(img) })
-      }
+      const foto = await processar(fila.shift())
+      if (foto) fotos.push(foto) // foto que falhou é pulada, não trava a fila
       onProgress?.(++prontas, lista.length)
     }
   }
-  await Promise.all([0, 1, 2, 3].map(operario))
+  await Promise.all(Array.from({ length: N }, operario))
   return fotos
 }
 

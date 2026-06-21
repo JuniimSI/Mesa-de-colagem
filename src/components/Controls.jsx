@@ -14,7 +14,7 @@ const ESTILOS = [
 ]
 
 export default function Controls({
-  fotos, onFiles, onRemove, onClear, onAssin, onView, analisando, assinNome, temAssin, assinAlpha, setAssinAlpha,
+  fotos, onFiles, onRemove, onClear, onAssin, onView, analisando, assinNome, assinSrc, temAssin, assinAlpha, setAssinAlpha,
   prop, setProp, estilo, setEstilo, melhoria, setMelhoria,
   podeGerar, gerando, onGerar, status,
 }) {
@@ -133,6 +133,11 @@ export default function Controls({
         <span style={{ display: 'block', fontSize: 12.5, color: 'var(--cinza-2)', marginTop: 8 }}>
           {assinNome}
         </span>
+        {temAssin && assinSrc && (
+          <div className="assin-prev">
+            <img src={assinSrc} alt="Prévia da assinatura" style={{ opacity: assinAlpha }} />
+          </div>
+        )}
         {temAssin && (
           <div className="range-row">
             <label htmlFor="op">Opacidade</label>
