@@ -4,7 +4,6 @@ import Thumbs from './Thumbs.jsx'
 const RATIOS = [
   { v: '4:5', t: '4:5', d: 'Feed' },
   { v: '1:1', t: '1:1', d: 'Quadrado' },
-  { v: '9:16', t: '9:16', d: 'Stories' },
   { v: '3:4', t: '3:4', d: 'Retrato' },
 ]
 
@@ -15,7 +14,7 @@ const ESTILOS = [
 ]
 
 export default function Controls({
-  fotos, onFiles, onRemove, onClear, onAssin, assinNome, temAssin, assinAlpha, setAssinAlpha,
+  fotos, onFiles, onRemove, onClear, onAssin, onView, analisando, assinNome, temAssin, assinAlpha, setAssinAlpha,
   prop, setProp, estilo, setEstilo, melhoria, setMelhoria,
   podeGerar, gerando, onGerar, status,
 }) {
@@ -64,7 +63,7 @@ export default function Controls({
         />
       </div>
 
-      {n > 0 && <Thumbs fotos={fotos} onRemove={onRemove} />}
+      {(n > 0 || analisando > 0) && <Thumbs fotos={fotos} onRemove={onRemove} onView={onView} analisando={analisando} />}
 
       <div className="campo">
         <span className="rotulo">Proporção de saída</span>

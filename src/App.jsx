@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Header from './components/Header.jsx'
 import Controls from './components/Controls.jsx'
 import Mesa from './components/Mesa.jsx'
+import Lightbox from './components/Lightbox.jsx'
 import { carregarFotos, agrupar } from './lib/image.js'
 import { montar } from './lib/render.js'
 import { baixar } from './lib/download.js'
@@ -21,6 +22,8 @@ export default function App() {
   const [status, setStatus] = useState('')
   const [gerando, setGerando] = useState(false)
   const [rodape, setRodape] = useState(false)
+  const [analisando, setAnalisando] = useState(0)
+  const [preview, setPreview] = useState(null)
 
   // dimensões derivadas da proporção escolhida
   const dims = () => {
@@ -34,8 +37,11 @@ export default function App() {
 
   // adiciona às fotos já carregadas (não substitui)
   async function onFiles(files) {
+    const qtd = [...files].filter((f) => f.type.startsWith('image/')).length
+    setAnalisando(qtd)
     setStatus('Analisando…')
-    const novas = await carregarFotos(files, (done, total) => setStatus(`Analisando ${done}/${total}…`))
+    const novas = await carregarFotos(files, (done, t) => setStatus(`Analisando ${done}/${t}…`))
+    setAnalisando(0)
     const total = fotos.length + novas.length
     setFotos((prev) => [...prev, ...novas])
     setStatus(`${total} fotos prontas para agrupar.`)
@@ -138,6 +144,8 @@ export default function App() {
             onRemove={removerFoto}
             onClear={limpar}
             onAssin={onAssin}
+            onView={setPreview}
+            analisando={analisando}
             assinNome={assinNome}
             temAssin={!!assinatura}
             assinAlpha={assinAlpha}
@@ -161,6 +169,7 @@ export default function App() {
             prevW={prevW}
             prevH={prevH}
             busy={busy}
+            onView={setPreview}
             onRelayout={reLayout}
             onBaixar={(i) => baixar(colagens[i].cv, `colagem_${i + 1}.jpg`)}
           />
@@ -178,6 +187,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <Lightbox src={preview} onClose={() => setPreview(null)} />
     </>
   )
 }

@@ -1,6 +1,6 @@
 import Carta from './Carta.jsx'
 
-export default function Mesa({ colagens, pending, prevW, prevH, busy, onRelayout, onBaixar }) {
+export default function Mesa({ colagens, pending, prevW, prevH, busy, onView, onRelayout, onBaixar }) {
   const skeletons = Math.max(0, pending - colagens.length)
   const vazia = colagens.length === 0 && pending === 0
 
@@ -31,6 +31,7 @@ export default function Mesa({ colagens, pending, prevW, prevH, busy, onRelayout
           prevW={prevW}
           prevH={prevH}
           busy={busy.has(i)}
+          onView={onView}
           onRelayout={() => onRelayout(i)}
           onBaixar={() => onBaixar(i)}
         />

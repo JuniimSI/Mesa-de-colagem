@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-export default function Carta({ index, colagem, prevW, prevH, busy, onRelayout, onBaixar }) {
+export default function Carta({ index, colagem, prevW, prevH, busy, onView, onRelayout, onBaixar }) {
   const ref = useRef(null)
 
   // redesenha o preview a partir do canvas full-res sempre que ele muda
@@ -13,7 +13,14 @@ export default function Carta({ index, colagem, prevW, prevH, busy, onRelayout, 
   return (
     <div className="carta">
       <div className="envolto">
-        <canvas ref={ref} width={prevW} height={prevH} />
+        <canvas
+          ref={ref}
+          width={prevW}
+          height={prevH}
+          className="carta-cv"
+          onClick={() => onView?.(colagem.cv)}
+          title="Ampliar"
+        />
         {busy && <div className="spin-over"><div className="spin" /></div>}
       </div>
       <div className="carta-rodape">
