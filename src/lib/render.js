@@ -1,21 +1,32 @@
-// Renderização das colagens no canvas (corte, vibrância, grão, assinatura).
+// Renderização das colagens no canvas (corte, zoom/pan, vibrância, grão, assinatura).
 import { escolherLayout } from './layouts.js'
 
-// corte inteligente: centro horizontal, viés p/ cima (rostos)
-function desenharCelula(ctx, foto, cx, cy, cw, ch, melhoria) {
-  const img = foto.bmp, sw = foto.w, sh = foto.h
-  const alvo = cw / ch, src = sw / sh
-  let sx = 0, sy = 0, scw = sw, sch = sh
-  if (src > alvo) { scw = sh * alvo; sx = (sw - scw) * 0.5 }
-  else { sch = sw / alvo; sy = (sh - sch) * 0.3 } // viés 30% do topo
+// Calcula o retângulo-fonte (na foto original) para preencher uma célula.
+// zoom>=1 fecha o enquadramento; ox/oy em [0,1] posicionam a janela na folga.
+// Padrão zoom=1, ox=.5, oy=.3 reproduz o corte antigo (centro-X, viés 30% do topo).
+export function fonteRecorte(foto, alvo, zoom = 1, ox = 0.5, oy = 0.3) {
+  const sw = foto.w, sh = foto.h, src = sw / sh
+  let bw, bh // janela base (cover, zoom 1)
+  if (src > alvo) { bh = sh; bw = sh * alvo } else { bw = sw; bh = sw / alvo }
+  const ww = bw / zoom, hh = bh / zoom
+  const slackX = sw - ww, slackY = sh - hh
+  const sx = slackX * clamp01(ox), sy = slackY * clamp01(oy)
+  return { sx, sy, sw: ww, sh: hh, slackX, slackY }
+}
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
+
+// desenha uma célula a partir do slot { foto, zoom, ox, oy }
+function desenharCelula(ctx, slot, cx, cy, cw, ch, melhoria, rapido) {
+  const foto = slot.foto
+  const { sx, sy, sw, sh } = fonteRecorte(foto, cw / ch, slot.zoom, slot.ox, slot.oy)
   if (melhoria) {
     ctx.filter = foto.lum < 95
       ? 'brightness(1.2) contrast(1.05) saturate(1.05)'
       : 'brightness(1.1) contrast(1.03) saturate(1.04)'
   }
-  ctx.drawImage(img, sx, sy, scw, sch, cx, cy, cw, ch)
+  ctx.drawImage(foto.bmp, sx, sy, sw, sh, cx, cy, cw, ch)
   ctx.filter = 'none'
-  if (melhoria) vibrancia(ctx, cx, cy, cw, ch)
+  if (melhoria && !rapido) vibrancia(ctx, cx, cy, cw, ch)
 }
 
 // vibrância no canvas: satura cores fracas, preserva fortes e protege pele
@@ -51,19 +62,23 @@ function fazerGrao() {
   return g
 }
 
-// Monta uma colagem e devolve { cv, lay } (canvas full-res + nome do layout).
-export function montar(grupo, idxLayout, { W, H, estilo, melhoria, assinatura, assinAlpha = 1 }) {
+// Cria os slots de um grupo para um layout (verticais primeiro, transformes padrão).
+export function montarSlots(grupo, layoutObj) {
+  const fs = [...grupo].sort((a, b) => (b.vert ? 1 : 0) - (a.vert ? 1 : 0))
+  return layoutObj.c.map((_, i) => (fs[i] ? { foto: fs[i], zoom: 1, ox: 0.5, oy: 0.3 } : null))
+}
+
+// Renderiza um canvas (W×H) a partir de slots + layout. rapido pula vibrância/grão.
+export function renderColagem(slots, layoutObj, { W, H, melhoria, assinatura, assinAlpha = 1, rapido = false }) {
   const cv = document.createElement('canvas')
   cv.width = W
   cv.height = H
   const ctx = cv.getContext('2d')
-  // verticais primeiro: caem nas células altas dos layouts dinâmicos
-  const fs = [...grupo].sort((a, b) => (b.vert ? 1 : 0) - (a.vert ? 1 : 0))
-  const lay = escolherLayout(fs.length, idxLayout, estilo)
-  lay.c.forEach((c, i) => {
-    if (fs[i]) desenharCelula(ctx, fs[i], c[0] * W, c[1] * H, c[2] * W, c[3] * H, melhoria)
+  layoutObj.c.forEach((c, i) => {
+    const s = slots[i]
+    if (s && s.foto) desenharCelula(ctx, s, c[0] * W, c[1] * H, c[2] * W, c[3] * H, melhoria, rapido)
   })
-  if (melhoria) {
+  if (melhoria && !rapido) {
     if (!grao) grao = fazerGrao()
     ctx.globalAlpha = 0.06
     ctx.globalCompositeOperation = 'overlay'
@@ -80,5 +95,13 @@ export function montar(grupo, idxLayout, { W, H, estilo, melhoria, assinatura, a
     ctx.shadowBlur = 0
     ctx.globalAlpha = 1
   }
-  return { cv, lay: lay.nome }
+  return cv
+}
+
+// Monta uma colagem do zero. Devolve { cv, lay, layoutObj, slots, varia }.
+export function montar(grupo, idxLayout, opts) {
+  const layoutObj = escolherLayout(grupo.length, idxLayout, opts.estilo)
+  const slots = montarSlots(grupo, layoutObj)
+  const cv = renderColagem(slots, layoutObj, opts)
+  return { cv, lay: layoutObj.nome, layoutObj, slots, varia: idxLayout }
 }

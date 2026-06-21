@@ -4,7 +4,8 @@ import Controls from './components/Controls.jsx'
 import Mesa from './components/Mesa.jsx'
 import Lightbox from './components/Lightbox.jsx'
 import { carregarFotos, agrupar } from './lib/image.js'
-import { montar } from './lib/render.js'
+import { montar, renderColagem } from './lib/render.js'
+import { escolherLayout } from './lib/layouts.js'
 import { baixar } from './lib/download.js'
 import { pintar } from './lib/util.js'
 
@@ -21,6 +22,7 @@ export default function App() {
   const [pending, setPending] = useState(0)
   const [busy, setBusy] = useState(new Set())
   const [status, setStatus] = useState('')
+  const [dropTarget, setDropTarget] = useState(null) // célula-alvo da troca em destaque
   const [gerando, setGerando] = useState(false)
   const [rodape, setRodape] = useState(false)
   const [analisando, setAnalisando] = useState(0)
@@ -90,8 +92,8 @@ export default function App() {
     const novas = []
     for (let i = 0; i < grupos.length; i++) {
       await pintar() // garante o frame antes do trabalho pesado
-      const { cv, lay } = montar(grupos[i], i, o)
-      novas.push({ cv, grupo: grupos[i], lay, varia: i })
+      const m = montar(grupos[i], i, o)
+      novas.push({ ...m, grupo: grupos[i] })
       setColagens([...novas])
     }
     setPending(0)
@@ -100,14 +102,18 @@ export default function App() {
     setStatus(`${grupos.length} colagens montadas a partir de ${fotos.length} fotos.`)
   }
 
-  // troca o layout de uma carta (variante seguinte), com spinner sobreposto
+  // troca o layout de uma carta (variante seguinte). Mantém as fotos/ajustes
+  // de cada slot (por índice) e só remonta a geometria das células.
   async function reLayout(i) {
     setBusy((p) => new Set(p).add(i))
     await pintar()
+    const o = opts()
     const c = colagens[i]
     const varia = c.varia + 1
-    const { cv, lay } = montar(c.grupo, varia, opts())
-    setColagens((p) => p.map((x, k) => (k === i ? { ...x, cv, lay, varia } : x)))
+    const layoutObj = escolherLayout(c.grupo.length, varia, o.estilo)
+    const slots = c.slots.map((s) => (s ? { ...s } : null))
+    const cv = renderColagem(slots, layoutObj, o)
+    setColagens((p) => p.map((x, k) => (k === i ? { ...x, cv, lay: layoutObj.nome, layoutObj, slots, varia } : x)))
     setBusy((p) => {
       const n = new Set(p)
       n.delete(i)
@@ -115,7 +121,7 @@ export default function App() {
     })
   }
 
-  // reembaralha: spinner em todas as cartas, depois remonta cada uma na variante seguinte
+  // reembaralha: spinner em todas as cartas, depois troca o layout de cada uma
   async function reembaralhar() {
     if (!colagens.length) return
     setBusy(new Set(colagens.map((_, i) => i)))
@@ -123,11 +129,44 @@ export default function App() {
     const o = opts()
     const novas = colagens.map((c) => {
       const varia = c.varia + 1
-      const { cv, lay } = montar(c.grupo, varia, o)
-      return { ...c, cv, lay, varia }
+      const layoutObj = escolherLayout(c.grupo.length, varia, o.estilo)
+      const slots = c.slots.map((s) => (s ? { ...s } : null))
+      const cv = renderColagem(slots, layoutObj, o)
+      return { ...c, cv, lay: layoutObj.nome, layoutObj, slots, varia }
     })
     setColagens(novas)
     setBusy(new Set())
+  }
+
+  // commit de zoom/posição de um slot: spinner + re-renderiza a colagem em full-res
+  async function onEdit(i, slots) {
+    setBusy((p) => new Set(p).add(i))
+    await pintar()
+    const o = opts()
+    setColagens((p) =>
+      p.map((x, k) => (k === i ? { ...x, slots, cv: renderColagem(slots, x.layoutObj, o) } : x))
+    )
+    setBusy((p) => { const n = new Set(p); n.delete(i); return n })
+  }
+
+  // troca a foto entre dois slots (mesma colagem ou entre colagens).
+  // Mostra skeleton nas duas montagens, reseta o enquadramento e re-renderiza.
+  async function onSwap(ci, si, cj, sj) {
+    if (ci === cj && si === sj) return
+    setBusy((p) => new Set(p).add(ci).add(cj))
+    await pintar()
+    const o = opts()
+    setColagens((p) => {
+      const next = p.map((x) => ({ ...x, slots: [...x.slots] }))
+      const a = next[ci]?.slots[si], b = next[cj]?.slots[sj]
+      if (!a || !b) return p
+      next[ci].slots[si] = { foto: b.foto, zoom: 1, ox: 0.5, oy: 0.3 }
+      next[cj].slots[sj] = { foto: a.foto, zoom: 1, ox: 0.5, oy: 0.3 }
+      next[ci].cv = renderColagem(next[ci].slots, next[ci].layoutObj, o)
+      if (cj !== ci) next[cj].cv = renderColagem(next[cj].slots, next[cj].layoutObj, o)
+      return next
+    })
+    setBusy((p) => { const n = new Set(p); n.delete(ci); n.delete(cj); return n })
   }
 
   function baixarTudo() {
@@ -174,12 +213,25 @@ export default function App() {
             prevW={prevW}
             prevH={prevH}
             busy={busy}
+            previewOpts={{ melhoria, assinatura, assinAlpha }}
+            dropTarget={dropTarget}
+            onDropTarget={setDropTarget}
             onView={setPreview}
             onRelayout={reLayout}
+            onEdit={onEdit}
+            onSwap={onSwap}
             onBaixar={(i) => baixar(colagens[i].cv, `colagem_${i + 1}.jpg`)}
           />
         </div>
       </main>
+
+      {!rodape && (
+        <div className="barra-gerar">
+          <button className="btn btn-p btn-bloco" disabled={fotos.length < 2 || gerando} onClick={gerar}>
+            {gerando ? (<><span className="btn-spin" /> Montando…</>) : 'Montar colagens'}
+          </button>
+        </div>
+      )}
 
       {rodape && colagens.length > 0 && (
         <div className="barra-acao">
